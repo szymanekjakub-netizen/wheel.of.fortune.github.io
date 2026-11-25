@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koło fortuny</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: radial-gradient(circle at 50% 30%, #2b2d6e, #12132e);
+    color: #fff;
+    padding: 20px;
+  }
+  h1 { margin: 0; font-size: 2.2rem; letter-spacing: .5px; text-shadow: 0 3px 10px rgba(0,0,0,.4); }
+  .wheel-wrap {
+    position: relative;
+    width: min(88vw, 500px);
+    aspect-ratio: 1;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: 0 0 0 10px #fff, 0 0 0 14px #ffd23f, 0 15px 50px rgba(0,0,0,.6);
+    cursor: pointer;
+  }
+  .pointer {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 22px solid transparent;
+    border-right: 22px solid transparent;
+    border-top: 46px solid #ffd23f;
+    filter: drop-shadow(0 4px 4px rgba(0,0,0,.5));
+    z-index: 2;
+  }
+  .hub {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 15%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: #fff;
+    border: 6px solid #ffd23f;
+    box-shadow: 0 3px 10px rgba(0,0,0,.4);
+    pointer-events: none;
+  }
+  button {
+    font-size: 1.4rem;
+    font-weight: 800;
+    padding: 14px 48px;
+    border: none;
+    border-radius: 999px;
+    background: #ffd23f;
+    color: #12132e;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #c9a21c, 0 10px 20px rgba(0,0,0,.4);
+    transition: transform .1s, box-shadow .1s;
+  }
+  button:active { transform: translateY(4px); box-shadow: 0 2px 0 #c9a21c, 0 5px 10px rgba(0,0,0,.4); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #wynik { font-size: 2rem; font-weight: 800; min-height: 2.6rem; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>🎡 Koło fortuny</h1>
+
+<div class="wheel-wrap">
+  <div class="pointer"></div>
+  <canvas id="kolo"></canvas>
+  <div class="hub"></div>
+</div>
+
+<button id="btn">KRĘĆ!</button>
+<div id="wynik"></div>
+
+<script>
+  const osoby = ['Kuba', 'Kamil', 'Tomek', 'Dawid', 'Wiktoria', 'Julcia', 'Maciej', 'Dorotka', 'Ola'];
+  const kolory = [
+    ['#ef476f', '#fff'], ['#f78c6b', '#fff'], ['#ffd166', '#222'],
+    ['#06d6a0', '#222'], ['#118ab2', '#fff'], ['#8338ec', '#fff'],
+    ['#ff006e', '#fff'], ['#3a86ff', '#fff'], ['#2ec4b6', '#222']
+  ];
+
+  // Kolejność wyników: 1. Tomek, 2. Kamil, 3. Kuba, potem w kółko
+  const kolejka = ['Tomek', 'Kamil', 'Kuba'];
+
+  const canvas = document.getElementById('kolo');
+  const ctx = canvas.getContext('2d');
+  const btn = document.getElementById('btn');
+  const wynik = document.getElementById('wynik');
+
+  const S = 1000, R = S / 2;
+  canvas.width = S; canvas.height = S;
+  const seg = 2 * Math.PI / osoby.length;
+  const segDeg = 360 / osoby.length;
+
+  function rysuj() {
+    ctx.clearRect(0, 0, S, S);
+    osoby.forEach((imie, i) => {
+      const a0 = i * seg, a1 = a0 + seg;
+      ctx.beginPath();
+      ctx.moveTo(R, R);
+      ctx.arc(R, R, R, a0, a1);
+      ctx.closePath();
+      ctx.fillStyle = kolory[i][0];
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.7)';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(R, R);
+      ctx.rotate(a0 + seg / 2);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = kolory[i][1];
+      ctx.font = 'bold 54px system-ui, -apple-system, sans-serif';
+      ctx.fillText(imie, R - 45, 0);
+      ctx.restore();
+    });
+  }
+  rysuj();
+
+  // dźwięk "tik"
+  let audio = null;
+  function tik() {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'square';
+      o.frequency.value = 900;
+      g.gain.setValueAtTime(0.04, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.04);
+      o.connect(g).connect(audio.destination);
+      o.start();
+      o.stop(audio.currentTime + 0.05);
+    } catch (e) {}
+  }
+
+  let losowanie = 0, obrot = 0, kreci = false;
+
+  function krec() {
+    if (kreci) return;
+    kreci = true;
+    btn.disabled = true;
+    wynik.textContent = '';
+
+    const cel = osoby.indexOf(kolejka[losowanie % kolejka.length]);
+    losowanie++;
+
+    // losowe miejsce w polu (nie na samej krawędzi), żeby wyglądało naturalnie
+    const f = 0.2 + Math.random() * 0.6;
+    const docelowy = ((270 - (cel + f) * segDeg) % 360 + 360) % 360;
+    const teraz = ((obrot % 360) + 360) % 360;
+    const delta = (docelowy - teraz + 360) % 360;
+
+    const start = obrot;
+    const koniec = obrot + (5 + Math.floor(Math.random() * 3)) * 360 + delta;
+    const czas = 5000 + Math.random() * 1500;
+    const t0 = performance.now();
+    let ostatniSeg = Math.floor(start / segDeg);
+
+    function klatka(t) {
+      const p = Math.min((t - t0) / czas, 1);
+      const e = 1 - Math.pow(1 - p, 4);
+      obrot = start + (koniec - start) * e;
+      canvas.style.transform = `rotate(${obrot}deg)`;
+
+      const s = Math.floor(obrot / segDeg);
+      if (s !== ostatniSeg) { tik(); ostatniSeg = s; }
+
+      if (p < 1) {
+        requestAnimationFrame(klatka);
+      } else {
+        kreci = false;
+        btn.disabled = false;
+        wynik.textContent = '🎉 ' + osoby[cel] + '! 🎉';
+      }
+    }
+    requestAnimationFrame(klatka);
+  }
+
+  btn.addEventListener('click', krec);
+  canvas.addEventListener('click', krec);
+</script>
+
+</body>
+</html>
